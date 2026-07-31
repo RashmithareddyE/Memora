@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-peach-gradient text-ink-900 font-body antialiased;
+    min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display text-ink-900;
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-12;
+  }
+
+  .glass-panel {
+    @apply bg-white/50 backdrop-blur-xl border border-white/60 shadow-glass;
+  }
+}
