@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Images } from 'lucide-react';
-import Button from '@/components/ui/Button';
+import Button from '../ui/Button';
 
 function Navbar() {
   return (

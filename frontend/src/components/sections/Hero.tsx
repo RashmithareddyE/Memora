@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { UploadCloud, FolderPlus, Images } from 'lucide-react';
-import Button from '@/components/ui/Button';
+import Button from '../ui/Button';
 
 const containerVariants = {
   hidden: {},
