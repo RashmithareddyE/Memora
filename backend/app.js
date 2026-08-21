@@ -4,6 +4,7 @@ const cors = require('cors');
 const healthRoutes = require('./routes/health.routes');
 const authRoutes = require('./routes/auth.routes');
 const roomRoutes = require('./routes/room.routes');
+const mediaRoutes = require('./routes/media.routes');
 
 const app = express();
 
@@ -16,5 +17,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
+app.use('/api', mediaRoutes);
 
 module.exports = app;
