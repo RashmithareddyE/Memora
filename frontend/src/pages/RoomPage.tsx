@@ -4,6 +4,8 @@ import { motion } from 'framer-motion';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Crown, Copy, Check, ArrowLeft, Images, Activity, MessageCircle } from 'lucide-react';
 import Button from '../components/ui/Button';
+import MediaUpload from '../components/media/MediaUpload';
+import MediaGallery from '../components/media/MediaGallery';
 import { useAuth } from '../context/AuthContext';
 import { apiClient, ApiError } from '../lib/apiClient';
 import type { Room } from '../types/room';
@@ -187,17 +189,21 @@ function RoomPage() {
           </div>
         </div>
 
-        {/* Placeholder sections for later phases */}
+        {/* Media: upload + gallery */}
         <div className="glass-panel rounded-2xl px-6 py-6">
-          <div className="flex items-center gap-2 text-ink-900">
+          <div className="mb-4 flex items-center gap-2 text-ink-900">
             <Images size={20} className="text-coral-600" />
             <h2 className="font-display text-lg font-semibold">Shared memories</h2>
           </div>
-          <p className="mt-2 text-sm text-ink-600">
-            Photo and video uploads for this room are coming soon.
-          </p>
+
+          <MediaUpload roomId={room._id} />
+
+          <div className="mt-6">
+            <MediaGallery roomId={room._id} currentUserId={user?.id} roomOwnerId={room.owner._id} />
+          </div>
         </div>
 
+        {/* Placeholder sections for later phases */}
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="glass-panel rounded-2xl px-6 py-6">
             <div className="flex items-center gap-2 text-ink-900">
