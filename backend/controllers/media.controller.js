@@ -5,6 +5,7 @@ const cloudinary = require('../config/r2');
 const Media = require('../models/Media');
 const Room = require('../models/Room');
 const { ALLOWED_MIME_TYPES } = require('../middlewares/upload.middleware');
+const { analyzeMedia } = require('../services/aiMedia.service');
 
 const sanitizeFilename = (filename) =>
   filename
@@ -82,6 +83,13 @@ const uploadMedia = async (req, res) => {
     const responseMedia = await Media.findById(media._id)
       .select('-storageKey')
       .populate('uploader', 'name email');
+
+    // Fire-and-forget: analyzeMedia() handles and records its own failures
+    // (not configured, provider error, etc.), so this is only a safety net
+    // for something unexpected. The upload response is never delayed by it.
+    analyzeMedia(media._id).catch((error) => {
+      console.error('AI analysis trigger error:', error);
+    });
 
     return res.status(201).json({
       media: responseMedia,
@@ -232,9 +240,52 @@ const deleteMedia = async (req, res) => {
   }
 };
 
+// POST /api/media/:id/analyze
+// Manually trigger (or retry) AI analysis for a single media item.
+const analyzeMediaController = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid media ID' });
+    }
+
+    const media = await Media.findById(id);
+
+    if (!media) {
+      return res.status(404).json({ message: 'Media not found' });
+    }
+
+    const room = await Room.findById(media.room);
+
+    if (!room || !isRoomMember(room, req.userId)) {
+      return res.status(403).json({
+        message: 'You are not authorized to analyze this media',
+      });
+    }
+
+    await analyzeMedia(media._id);
+
+    const responseMedia = await Media.findById(id)
+      .select('-storageKey')
+      .populate('uploader', 'name email');
+
+    return res.status(200).json({
+      media: responseMedia,
+    });
+  } catch (error) {
+    console.error('Analyze media error:', error);
+
+    return res.status(500).json({
+      message: 'Something went wrong while analyzing the media',
+    });
+  }
+};
+
 module.exports = {
   uploadMedia,
   getRoomMedia,
   getMediaById,
   deleteMedia,
+  analyzeMediaController,
 };

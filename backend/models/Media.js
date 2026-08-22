@@ -47,6 +47,31 @@ const mediaSchema = new mongoose.Schema({
     },
     required: true,
   },
+  // --- AI analysis (Phase 9) ---
+  // 'not_analyzed': never attempted, or not eligible (e.g. videos for now).
+  // 'pending': a request to the AI provider is in flight.
+  // 'completed': aiAnalysis below is populated and current.
+  // 'failed': the last attempt errored; see aiError. Safe to retry.
+  aiStatus: {
+    type: String,
+    enum: ['not_analyzed', 'pending', 'completed', 'failed'],
+    default: 'not_analyzed',
+  },
+  // Human-readable reason for the last failure (e.g. "AI provider not
+  // configured"), so the UI can explain what happened without guessing.
+  aiError: {
+    type: String,
+    default: null,
+  },
+  aiAnalysis: {
+    description: { type: String, default: null },
+    people: { type: [String], default: [] },
+    places: { type: [String], default: [] },
+    objects: { type: [String], default: [] },
+    events: { type: [String], default: [] },
+    tags: { type: [String], default: [] },
+    analyzedAt: { type: Date, default: null },
+  },
   createdAt: {
     type: Date,
     default: Date.now,

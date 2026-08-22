@@ -7,6 +7,7 @@ const {
   getRoomMedia,
   getMediaById,
   deleteMedia,
+  analyzeMediaController,
 } = require('../controllers/media.controller');
 
 const router = express.Router();
@@ -24,5 +25,6 @@ router.get('/rooms/:roomId/media', getRoomMedia);
 // of which room it belongs to.
 router.get('/media/:id', getMediaById);
 router.delete('/media/:id', deleteMedia);
+router.post('/media/:id/analyze', analyzeMediaController);
 
 module.exports = router;
