@@ -5,6 +5,8 @@ import LoginPage from '../pages/LoginPage';
 import SignupPage from '../pages/SignupPage';
 import DashboardPage from '../pages/DashboardPage';
 import RoomPage from '../pages/RoomPage';
+import SearchPage from '../pages/SearchPage';
+import OrganizePage from '../pages/OrganizePage';
 import ProtectedRoute from '../components/routing/ProtectedRoute';
 
 function AppRoutes() {
@@ -30,6 +32,22 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <RoomPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/search"
+          element={
+            <ProtectedRoute>
+              <SearchPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/organize"
+          element={
+            <ProtectedRoute>
+              <OrganizePage />
             </ProtectedRoute>
           }
         />

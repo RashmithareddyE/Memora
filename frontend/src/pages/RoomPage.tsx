@@ -191,9 +191,14 @@ function RoomPage() {
 
         {/* Media: upload + gallery */}
         <div className="glass-panel rounded-2xl px-6 py-6">
-          <div className="mb-4 flex items-center gap-2 text-ink-900">
-            <Images size={20} className="text-coral-600" />
-            <h2 className="font-display text-lg font-semibold">Shared memories</h2>
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-ink-900">
+              <Images size={20} className="text-coral-600" />
+              <h2 className="font-display text-lg font-semibold">Shared memories</h2>
+            </div>
+            <Link to={`/search?roomId=${room._id}`} className="text-sm text-coral-600 hover:text-coral-700">
+              Search this room →
+            </Link>
           </div>
 
           <MediaUpload roomId={room._id} />

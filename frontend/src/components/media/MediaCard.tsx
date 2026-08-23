@@ -16,16 +16,19 @@ function formatDate(dateString: string): string {
 
 interface MediaCardProps {
   media: Media;
-  canDelete: boolean;
-  onDelete: (id: string) => void;
-  onAnalyze: (id: string) => void;
+  canDelete?: boolean;
+  onDelete?: (id: string) => void;
+  onAnalyze?: (id: string) => void;
   isDeleting?: boolean;
   isAnalyzing?: boolean;
 }
 
 function MediaCard({ media, canDelete, onDelete, onAnalyze, isDeleting, isAnalyzing }: MediaCardProps) {
   const showAnalysis = media.aiStatus === 'completed' && media.aiAnalysis;
-  const showAnalyzeButton = media.mediaType === 'image' && (media.aiStatus === 'not_analyzed' || media.aiStatus === 'failed');
+  const showAnalyzeButton =
+    Boolean(onAnalyze) &&
+    media.mediaType === 'image' &&
+    (media.aiStatus === 'not_analyzed' || media.aiStatus === 'failed');
   const analyzing = isAnalyzing || media.aiStatus === 'pending';
 
   return (
@@ -53,7 +56,7 @@ function MediaCard({ media, canDelete, onDelete, onAnalyze, isDeleting, isAnalyz
           <p className="truncate text-sm font-medium text-ink-900" title={media.originalName}>
             {media.originalName}
           </p>
-          {canDelete && (
+          {canDelete && onDelete && (
             <button
               onClick={() => onDelete(media._id)}
               disabled={isDeleting}
@@ -119,7 +122,7 @@ function MediaCard({ media, canDelete, onDelete, onAnalyze, isDeleting, isAnalyz
 
         {showAnalyzeButton && !analyzing && (
           <button
-            onClick={() => onAnalyze(media._id)}
+            onClick={() => onAnalyze?.(media._id)}
             className="mt-1 flex w-fit items-center gap-1.5 text-xs font-medium text-coral-600 hover:text-coral-700"
           >
             {media.aiStatus === 'failed' ? (

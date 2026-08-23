@@ -4,6 +4,8 @@ import { motion } from 'framer-motion';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FolderPlus, LogIn, Users, ArrowRight } from 'lucide-react';
 import Button from '../components/ui/Button';
+import MemoryHighlights from '../components/highlights/MemoryHighlights';
+import RecommendedForYou from '../components/highlights/RecommendedForYou';
 import { useAuth } from '../context/AuthContext';
 import { apiClient, ApiError } from '../lib/apiClient';
 import type { Room } from '../types/room';
@@ -220,6 +222,9 @@ function DashboardPage() {
             </div>
           )}
         </div>
+
+        <MemoryHighlights />
+        <RecommendedForYou />
       </motion.div>
     </div>
   );
