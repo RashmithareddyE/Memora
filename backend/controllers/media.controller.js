@@ -4,8 +4,11 @@ const mongoose = require('mongoose');
 const cloudinary = require('../config/r2');
 const Media = require('../models/Media');
 const Room = require('../models/Room');
+const Person = require('../models/Person');
+
 const { ALLOWED_MIME_TYPES } = require('../middlewares/upload.middleware');
 const { analyzeMedia } = require('../services/aiMedia.service');
+const { findOrCreatePerson } = require('../services/person.service');
 const { emitMediaCreated, emitMediaDeleted } = require('../socket');
 
 const sanitizeFilename = (filename) =>
@@ -26,6 +29,7 @@ const uploadToCloudinary = (buffer, options) =>
         if (error) {
           return reject(error);
         }
+
         resolve(result);
       }
     );
@@ -85,16 +89,12 @@ const uploadMedia = async (req, res) => {
       .select('-storageKey')
       .populate('uploader', 'name email');
 
-    // Fire-and-forget: analyzeMedia() handles and records its own failures
-    // (not configured, provider error, etc.), so this is only a safety net
-    // for something unexpected. The upload response is never delayed by it.
+    // Fire-and-forget AI analysis.
     analyzeMedia(media._id).catch((error) => {
       console.error('AI analysis trigger error:', error);
     });
 
-    // Real-time: notify anyone currently viewing this room. The uploader's
-    // own client will see this event too, but the frontend deduplicates by
-    // media _id, so they never see a duplicate from their own HTTP response.
+    // Notify room members in real time.
     emitMediaCreated(responseMedia);
 
     return res.status(201).json({
@@ -105,7 +105,10 @@ const uploadMedia = async (req, res) => {
 
     if (error.name === 'ValidationError') {
       const firstMessage = Object.values(error.errors)[0].message;
-      return res.status(400).json({ message: firstMessage });
+
+      return res.status(400).json({
+        message: firstMessage,
+      });
     }
 
     return res.status(500).json({
@@ -120,13 +123,17 @@ const getRoomMedia = async (req, res) => {
     const { roomId } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(roomId)) {
-      return res.status(400).json({ message: 'Invalid room ID' });
+      return res.status(400).json({
+        message: 'Invalid room ID',
+      });
     }
 
     const room = await Room.findById(roomId);
 
     if (!room) {
-      return res.status(404).json({ message: 'Room not found' });
+      return res.status(404).json({
+        message: 'Room not found',
+      });
     }
 
     if (!isRoomMember(room, req.userId)) {
@@ -140,7 +147,9 @@ const getRoomMedia = async (req, res) => {
       .select('-storageKey')
       .populate('uploader', 'name email');
 
-    return res.status(200).json({ media });
+    return res.status(200).json({
+      media,
+    });
   } catch (error) {
     console.error('Get room media error:', error);
 
@@ -156,7 +165,9 @@ const getMediaById = async (req, res) => {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: 'Invalid media ID' });
+      return res.status(400).json({
+        message: 'Invalid media ID',
+      });
     }
 
     const media = await Media.findById(id)
@@ -164,7 +175,9 @@ const getMediaById = async (req, res) => {
       .populate('uploader', 'name email');
 
     if (!media) {
-      return res.status(404).json({ message: 'Media not found' });
+      return res.status(404).json({
+        message: 'Media not found',
+      });
     }
 
     const room = await Room.findById(media.room);
@@ -175,7 +188,9 @@ const getMediaById = async (req, res) => {
       });
     }
 
-    return res.status(200).json({ media });
+    return res.status(200).json({
+      media,
+    });
   } catch (error) {
     console.error('Get media by id error:', error);
 
@@ -186,51 +201,57 @@ const getMediaById = async (req, res) => {
 };
 
 // DELETE /api/media/:id
-// DELETE /api/media/:id
 const deleteMedia = async (req, res) => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: 'Invalid media ID' });
+      return res.status(400).json({
+        message: 'Invalid media ID',
+      });
     }
 
     const media = await Media.findById(id);
 
     if (!media) {
-      return res.status(404).json({ message: 'Media not found' });
+      return res.status(404).json({
+        message: 'Media not found',
+      });
     }
 
     const room = await Room.findById(media.room);
 
     if (!room) {
-      return res.status(404).json({ message: 'Room not found' });
+      return res.status(404).json({
+        message: 'Room not found',
+      });
     }
 
     const userId = String(req.userId);
-    const ownerId = String(room.owner);
-    const uploaderId = String(media.uploader);
 
-    const isRoomMember = room.members.some(
+    const isMember = room.members.some(
       (memberId) => String(memberId) === userId
     );
 
-    if (!isRoomMember) {
+    if (!isMember) {
       return res.status(403).json({
         message: 'You must be a member of this room to delete this media',
       });
     }
 
-    const isUploader = media.uploader.toString() === String(req.userId);
-    const isRoomOwner = room.owner.toString() === String(req.userId);
+    const isUploader =
+      media.uploader.toString() === String(req.userId);
 
-  console.log('DELETE DEBUG:', {
-   mediaUploader: media.uploader.toString(),
-   roomOwner: room.owner.toString(),
-   currentUser: String(req.userId),
-   isUploader,
-   isRoomOwner,
-   });
+    const isRoomOwner =
+      room.owner.toString() === String(req.userId);
+
+    console.log('DELETE DEBUG:', {
+      mediaUploader: media.uploader.toString(),
+      roomOwner: room.owner.toString(),
+      currentUser: String(req.userId),
+      isUploader,
+      isRoomOwner,
+    });
 
     if (!isUploader && !isRoomOwner) {
       return res.status(403).json({
@@ -257,7 +278,6 @@ const deleteMedia = async (req, res) => {
 
     await media.deleteOne();
 
-  
     emitMediaDeleted(room._id, media._id);
 
     return res.status(200).json({
@@ -273,19 +293,22 @@ const deleteMedia = async (req, res) => {
 };
 
 // POST /api/media/:id/analyze
-// Manually trigger (or retry) AI analysis for a single media item.
 const analyzeMediaController = async (req, res) => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: 'Invalid media ID' });
+      return res.status(400).json({
+        message: 'Invalid media ID',
+      });
     }
 
     const media = await Media.findById(id);
 
     if (!media) {
-      return res.status(404).json({ message: 'Media not found' });
+      return res.status(404).json({
+        message: 'Media not found',
+      });
     }
 
     const room = await Room.findById(media.room);
@@ -314,10 +337,101 @@ const analyzeMediaController = async (req, res) => {
   }
 };
 
+// POST /api/media/:id/faces
+const saveMediaFaces = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { descriptors } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        message: 'Invalid media ID',
+      });
+    }
+
+    if (!Array.isArray(descriptors)) {
+      return res.status(400).json({
+        message: 'Face descriptors must be an array',
+      });
+    }
+
+    const media = await Media.findById(id);
+
+    if (!media) {
+      return res.status(404).json({
+        message: 'Media not found',
+      });
+    }
+
+    if (media.mediaType !== 'image') {
+      return res.status(400).json({
+        message: 'Face detection is only supported for images',
+      });
+    }
+
+    const room = await Room.findById(media.room);
+
+    if (!room || !isRoomMember(room, req.userId)) {
+      return res.status(403).json({
+        message: 'You are not authorized to update this media',
+      });
+    }
+
+    const validDescriptors = descriptors.filter(
+      (descriptor) =>
+        Array.isArray(descriptor) &&
+        descriptor.length === 128 &&
+        descriptor.every(
+          (value) =>
+            typeof value === 'number' &&
+            Number.isFinite(value)
+        )
+    );
+
+    const detectedFaces = [];
+
+    for (const descriptor of validDescriptors) {
+      const result = await findOrCreatePerson(
+        media.room,
+        descriptor,
+        media._id
+      );
+
+      detectedFaces.push({
+        person: result.person._id,
+        confidence: result.similarity,
+      });
+    }
+
+    media.faces = detectedFaces;
+
+    await media.save();
+
+    const responseMedia = await Media.findById(media._id)
+      .select('-storageKey')
+      .populate('uploader', 'name email')
+      .populate(
+        'faces.person',
+        'name memoryCount representativeMedia'
+      );
+
+    return res.status(200).json({
+      media: responseMedia,
+    });
+  } catch (error) {
+    console.error('Save media faces error:', error);
+
+    return res.status(500).json({
+      message: 'Something went wrong while saving detected faces',
+    });
+  }
+};
+
 module.exports = {
   uploadMedia,
   getRoomMedia,
   getMediaById,
   deleteMedia,
   analyzeMediaController,
+  saveMediaFaces,
 };
