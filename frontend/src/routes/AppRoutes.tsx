@@ -9,6 +9,7 @@ import SearchPage from '../pages/SearchPage';
 import OrganizePage from '../pages/OrganizePage';
 import ProtectedRoute from '../components/routing/ProtectedRoute';
 import AnalyticsPage from '../pages/AnalyticsPage';
+import AccountPage from '../pages/AccountPage';
 
 function AppRoutes() {
   return (
@@ -28,6 +29,7 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/room/:id"
           element={
@@ -36,6 +38,7 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/search"
           element={
@@ -44,19 +47,31 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/analytics"
           element={
-           <ProtectedRoute>
-             <AnalyticsPage />
-           </ProtectedRoute>
+            <ProtectedRoute>
+              <AnalyticsPage />
+            </ProtectedRoute>
           }
         />
+
         <Route
           path="/organize"
           element={
             <ProtectedRoute>
               <OrganizePage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Account */}
+        <Route
+          path="/account"
+          element={
+            <ProtectedRoute>
+              <AccountPage />
             </ProtectedRoute>
           }
         />

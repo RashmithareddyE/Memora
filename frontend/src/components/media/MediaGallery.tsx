@@ -33,7 +33,11 @@ function MediaGallery({ roomId, currentUserId, roomOwnerId }: MediaGalleryProps)
       queryClient.invalidateQueries({ queryKey: ['media', roomId] });
     },
     onError: (err) => {
-      setActionError(err instanceof ApiError ? err.message : 'Could not delete this item.');
+      setActionError(
+        err instanceof ApiError
+          ? err.message
+          : 'Could not delete this item.'
+      );
     },
     onSettled: () => setDeletingId(null),
   });
@@ -48,7 +52,11 @@ function MediaGallery({ roomId, currentUserId, roomOwnerId }: MediaGalleryProps)
       queryClient.invalidateQueries({ queryKey: ['media', roomId] });
     },
     onError: (err) => {
-      setActionError(err instanceof ApiError ? err.message : 'Could not analyze this item.');
+      setActionError(
+        err instanceof ApiError
+          ? err.message
+          : 'Could not analyze this item.'
+      );
     },
     onSettled: () => setAnalyzingId(null),
   });
@@ -74,7 +82,10 @@ function MediaGallery({ roomId, currentUserId, roomOwnerId }: MediaGalleryProps)
   return (
     <div className="flex flex-col gap-4">
       {actionError && (
-        <p className="rounded-xl bg-coral-500/10 px-4 py-2.5 text-sm text-coral-700" role="alert">
+        <p
+          className="rounded-xl bg-coral-500/10 px-4 py-2.5 text-sm text-coral-700"
+          role="alert"
+        >
           {actionError}
         </p>
       )}
@@ -83,21 +94,33 @@ function MediaGallery({ roomId, currentUserId, roomOwnerId }: MediaGalleryProps)
         <div className="rounded-2xl border border-ink-900/10 bg-white/50 px-6 py-10 text-center text-ink-600">
           <Images size={28} className="mx-auto mb-3 text-ink-400" />
           <p>No memories here yet.</p>
-          <p className="text-sm">Upload a photo or video above to get started.</p>
+          <p className="text-sm">
+            Upload a photo or video above to get started.
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {items.map((media) => (
-            <MediaCard
-              key={media._id}
-              media={media}
-              canDelete={media.uploader._id === currentUserId || roomOwnerId === currentUserId}
-              onDelete={(id) => deleteMutation.mutate(id)}
-              onAnalyze={(id) => analyzeMutation.mutate(id)}
-              isDeleting={deletingId === media._id}
-              isAnalyzing={analyzingId === media._id}
-            />
-          ))}
+          {items.map((media) => {
+            const uploaderId = String(media.uploader?._id ?? '');
+            const userId = String(currentUserId ?? '');
+            const ownerId = String(roomOwnerId ?? '');
+
+            const canDelete =
+              Boolean(userId) &&
+              (uploaderId === userId || ownerId === userId);
+
+            return (
+              <MediaCard
+                key={media._id}
+                media={media}
+                canDelete={canDelete}
+                onDelete={(id) => deleteMutation.mutate(id)}
+                onAnalyze={(id) => analyzeMutation.mutate(id)}
+                isDeleting={deletingId === media._id}
+                isAnalyzing={analyzingId === media._id}
+              />
+            );
+          })}
         </div>
       )}
     </div>
