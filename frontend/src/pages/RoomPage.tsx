@@ -16,6 +16,7 @@ import {
 import Button from '../components/ui/Button';
 import MediaUpload from '../components/media/MediaUpload';
 import MediaGallery from '../components/media/MediaGallery';
+import PeopleSection from '../components/people/PeopleSection';
 import { useAuth } from '../context/AuthContext';
 import { apiClient, ApiError } from '../lib/apiClient';
 import { useRoomSocket } from '../lib/useRoomSocket';
@@ -486,6 +487,8 @@ function RoomPage() {
             />
           </div>
         </div>
+                {/* People detected across memories */}
+        <PeopleSection roomId={room._id} />
 
         <div className="grid gap-6 sm:grid-cols-2">
           {/* Live activity, populated in real time via Socket.IO */}

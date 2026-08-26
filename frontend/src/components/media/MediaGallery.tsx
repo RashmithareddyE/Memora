@@ -4,6 +4,7 @@ import { Images } from 'lucide-react';
 import { mediaApi } from '../../lib/api/media';
 import { ApiError } from '../../lib/apiClient';
 import MediaCard from './MediaCard';
+import MediaViewer from './MediaViewer';
 
 interface MediaGalleryProps {
   roomId: string;
@@ -11,12 +12,17 @@ interface MediaGalleryProps {
   roomOwnerId: string;
 }
 
-function MediaGallery({ roomId, currentUserId, roomOwnerId }: MediaGalleryProps) {
+function MediaGallery({
+  roomId,
+  currentUserId,
+  roomOwnerId,
+}: MediaGalleryProps) {
   const queryClient = useQueryClient();
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['media', roomId],
@@ -25,13 +31,18 @@ function MediaGallery({ roomId, currentUserId, roomOwnerId }: MediaGalleryProps)
 
   const deleteMutation = useMutation({
     mutationFn: (mediaId: string) => mediaApi.remove(mediaId),
+
     onMutate: (mediaId: string) => {
       setActionError(null);
       setDeletingId(mediaId);
     },
+
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['media', roomId] });
+      queryClient.invalidateQueries({
+        queryKey: ['media', roomId],
+      });
     },
+
     onError: (err) => {
       setActionError(
         err instanceof ApiError
@@ -39,18 +50,26 @@ function MediaGallery({ roomId, currentUserId, roomOwnerId }: MediaGalleryProps)
           : 'Could not delete this item.'
       );
     },
-    onSettled: () => setDeletingId(null),
+
+    onSettled: () => {
+      setDeletingId(null);
+    },
   });
 
   const analyzeMutation = useMutation({
     mutationFn: (mediaId: string) => mediaApi.analyze(mediaId),
+
     onMutate: (mediaId: string) => {
       setActionError(null);
       setAnalyzingId(mediaId);
     },
+
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['media', roomId] });
+      queryClient.invalidateQueries({
+        queryKey: ['media', roomId],
+      });
     },
+
     onError: (err) => {
       setActionError(
         err instanceof ApiError
@@ -58,7 +77,10 @@ function MediaGallery({ roomId, currentUserId, roomOwnerId }: MediaGalleryProps)
           : 'Could not analyze this item.'
       );
     },
-    onSettled: () => setAnalyzingId(null),
+
+    onSettled: () => {
+      setAnalyzingId(null);
+    },
   });
 
   if (isLoading) {
@@ -79,6 +101,20 @@ function MediaGallery({ roomId, currentUserId, roomOwnerId }: MediaGalleryProps)
 
   const items = data?.media ?? [];
 
+  const openViewer = (mediaId: string) => {
+    const index = items.findIndex(
+      (media) => media._id === mediaId
+    );
+
+    if (index !== -1) {
+      setViewerIndex(index);
+    }
+  };
+
+  const closeViewer = () => {
+    setViewerIndex(null);
+  };
+
   return (
     <div className="flex flex-col gap-4">
       {actionError && (
@@ -92,36 +128,46 @@ function MediaGallery({ roomId, currentUserId, roomOwnerId }: MediaGalleryProps)
 
       {items.length === 0 ? (
         <div className="rounded-2xl border border-ink-900/10 bg-white/50 px-6 py-10 text-center text-ink-600">
-          <Images size={28} className="mx-auto mb-3 text-ink-400" />
+          <Images
+            size={28}
+            className="mx-auto mb-3 text-ink-400"
+          />
+
           <p>No memories here yet.</p>
+
           <p className="text-sm">
             Upload a photo or video above to get started.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {items.map((media) => {
-            const uploaderId = String(media.uploader?._id ?? '');
-            const userId = String(currentUserId ?? '');
-            const ownerId = String(roomOwnerId ?? '');
-
-            const canDelete =
-              Boolean(userId) &&
-              (uploaderId === userId || ownerId === userId);
-
-            return (
-              <MediaCard
-                key={media._id}
-                media={media}
-                canDelete={canDelete}
-                onDelete={(id) => deleteMutation.mutate(id)}
-                onAnalyze={(id) => analyzeMutation.mutate(id)}
-                isDeleting={deletingId === media._id}
-                isAnalyzing={analyzingId === media._id}
-              />
-            );
-          })}
+          {items.map((media) => (
+            <MediaCard
+              key={media._id}
+              media={media}
+              canDelete={
+                String(media.uploader?._id) ===
+                  String(currentUserId) ||
+                String(roomOwnerId) ===
+                  String(currentUserId)
+              }
+              onDelete={(id) => deleteMutation.mutate(id)}
+              onAnalyze={(id) => analyzeMutation.mutate(id)}
+              onOpen={openViewer}
+              isDeleting={deletingId === media._id}
+              isAnalyzing={analyzingId === media._id}
+            />
+          ))}
         </div>
+      )}
+
+      {/* Full-screen gallery viewer */}
+      {viewerIndex !== null && items.length > 0 && (
+        <MediaViewer
+          media={items}
+          initialIndex={viewerIndex}
+          onClose={closeViewer}
+        />
       )}
     </div>
   );
