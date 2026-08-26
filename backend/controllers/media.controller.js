@@ -6,6 +6,7 @@ const Media = require('../models/Media');
 const Room = require('../models/Room');
 const { ALLOWED_MIME_TYPES } = require('../middlewares/upload.middleware');
 const { analyzeMedia } = require('../services/aiMedia.service');
+const { emitMediaCreated, emitMediaDeleted } = require('../socket');
 
 const sanitizeFilename = (filename) =>
   filename
@@ -90,6 +91,11 @@ const uploadMedia = async (req, res) => {
     analyzeMedia(media._id).catch((error) => {
       console.error('AI analysis trigger error:', error);
     });
+
+    // Real-time: notify anyone currently viewing this room. The uploader's
+    // own client will see this event too, but the frontend deduplicates by
+    // media _id, so they never see a duplicate from their own HTTP response.
+    emitMediaCreated(responseMedia);
 
     return res.status(201).json({
       media: responseMedia,
@@ -180,6 +186,7 @@ const getMediaById = async (req, res) => {
 };
 
 // DELETE /api/media/:id
+// DELETE /api/media/:id
 const deleteMedia = async (req, res) => {
   try {
     const { id } = req.params;
@@ -196,14 +203,34 @@ const deleteMedia = async (req, res) => {
 
     const room = await Room.findById(media.room);
 
-    if (!room || !isRoomMember(room, req.userId)) {
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    const userId = String(req.userId);
+    const ownerId = String(room.owner);
+    const uploaderId = String(media.uploader);
+
+    const isRoomMember = room.members.some(
+      (memberId) => String(memberId) === userId
+    );
+
+    if (!isRoomMember) {
       return res.status(403).json({
-        message: 'You are not authorized to delete this media',
+        message: 'You must be a member of this room to delete this media',
       });
     }
 
-    const isUploader = media.uploader.toString() === req.userId;
-    const isRoomOwner = room.owner.toString() === req.userId;
+    const isUploader = media.uploader.toString() === String(req.userId);
+    const isRoomOwner = room.owner.toString() === String(req.userId);
+
+  console.log('DELETE DEBUG:', {
+   mediaUploader: media.uploader.toString(),
+   roomOwner: room.owner.toString(),
+   currentUser: String(req.userId),
+   isUploader,
+   isRoomOwner,
+   });
 
     if (!isUploader && !isRoomOwner) {
       return res.status(403).json({
@@ -211,7 +238,8 @@ const deleteMedia = async (req, res) => {
       });
     }
 
-    const resourceType = media.mediaType === 'video' ? 'video' : 'image';
+    const resourceType =
+      media.mediaType === 'video' ? 'video' : 'image';
 
     try {
       await cloudinary.uploader.destroy(media.storageKey, {
@@ -222,11 +250,15 @@ const deleteMedia = async (req, res) => {
       console.error('Cloudinary deletion error:', cloudinaryError);
 
       return res.status(502).json({
-        message: 'Could not delete the file from storage, please try again',
+        message:
+          'Could not delete the file from storage, please try again',
       });
     }
 
     await media.deleteOne();
+
+  
+    emitMediaDeleted(room._id, media._id);
 
     return res.status(200).json({
       message: 'Media deleted successfully',

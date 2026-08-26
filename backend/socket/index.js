@@ -8,10 +8,9 @@ const isRoomMember = (room, userId) => room.members.some((memberId) => memberId.
 
 /**
  * Sets up the Socket.IO server on top of the existing HTTP server.
- * Foundation only (Phase 14, Prompt 1): authentication, room-membership
- * authorization, join/leave, and connection lifecycle. No feature events
- * (media/AI/member-activity) are emitted yet — that's Prompt 2, built on
- * top of this.
+ * Foundation (Prompt 1): authentication, room-membership authorization,
+ * join/leave, and connection lifecycle. Feature emit helpers (Prompt 2)
+ * are exported below and called from the relevant controllers/services.
  */
 function initSocket(httpServer) {
   io = new Server(httpServer, {
@@ -36,7 +35,8 @@ function initSocket(httpServer) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       // Matches the shape auth.middleware.js exposes on REST requests
-      // (req.userId), so future code can rely on the same identifier.
+      // (req.userId), so the rest of the codebase can rely on the same
+      // identifier regardless of transport.
       socket.userId = decoded.id;
       return next();
     } catch {
@@ -94,4 +94,62 @@ function getIO() {
   return io;
 }
 
-module.exports = { initSocket, getIO };
+/**
+ * Strips internal-only fields before anything goes out over a socket.
+ * storageKey is the Cloudinary object key and must never reach the client.
+ */
+function sanitizeMediaForClient(media) {
+  const plain = typeof media.toObject === 'function' ? media.toObject() : { ...media };
+  delete plain.storageKey;
+  return plain;
+}
+
+function emitMediaCreated(media) {
+  if (!io || !media) return;
+  const safeMedia = sanitizeMediaForClient(media);
+  io.to(safeMedia.room.toString()).emit('media:created', {
+    media: safeMedia,
+    activity: `${safeMedia.uploader?.name || 'Someone'} uploaded a ${safeMedia.mediaType}.`,
+  });
+}
+
+function emitMediaDeleted(roomId, mediaId) {
+  if (!io || !roomId) return;
+  io.to(roomId.toString()).emit('media:deleted', {
+    mediaId: mediaId?.toString(),
+    roomId: roomId.toString(),
+  });
+}
+
+function emitMediaAnalysisUpdate(media) {
+  if (!io || !media) return;
+  const safeMedia = sanitizeMediaForClient(media);
+  const event = safeMedia.aiStatus === 'completed' ? 'media:analysis-completed' : 'media:analysis-failed';
+  io.to(safeMedia.room.toString()).emit(event, { media: safeMedia });
+}
+
+function emitMemberJoined(roomId, member) {
+  if (!io || !roomId || !member) return;
+  io.to(roomId.toString()).emit('room:member-joined', {
+    member,
+    activity: `${member.name} joined the room.`,
+  });
+}
+
+function emitMemberLeft(roomId, member) {
+  if (!io || !roomId || !member) return;
+  io.to(roomId.toString()).emit('room:member-left', {
+    member,
+    activity: `${member.name} left the room.`,
+  });
+}
+
+module.exports = {
+  initSocket,
+  getIO,
+  emitMediaCreated,
+  emitMediaDeleted,
+  emitMediaAnalysisUpdate,
+  emitMemberJoined,
+  emitMemberLeft,
+};

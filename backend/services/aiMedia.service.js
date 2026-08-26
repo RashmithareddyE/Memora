@@ -1,16 +1,7 @@
 const Media = require('../models/Media');
 const { getProvider, isAiConfigured } = require('./aiProviders');
+const { emitMediaAnalysisUpdate } = require('../socket');
 
-/**
- * Analyzes a single media item and persists the result on the Media
- * document itself (aiStatus / aiAnalysis / aiError).
- *
- * Never throws for "expected" outcomes (not configured, not an image,
- * provider error) — those are recorded on the document and returned
- * normally, so the original upload is never affected by an AI failure.
- * Only throws for unexpected conditions (e.g. the media was deleted out
- * from under us), which callers should log defensively.
- */
 async function analyzeMedia(mediaId) {
   const media = await Media.findById(mediaId);
 
@@ -18,8 +9,6 @@ async function analyzeMedia(mediaId) {
     throw new Error(`Cannot analyze media ${mediaId}: not found`);
   }
 
-  // Only images are analyzed for now — sensible video analysis would need
-  // frame extraction, which is out of scope for this phase.
   if (media.mediaType !== 'image') {
     media.aiStatus = 'not_analyzed';
     media.aiError = 'AI analysis is only available for images right now';
@@ -40,6 +29,7 @@ async function analyzeMedia(mediaId) {
 
   try {
     const provider = getProvider();
+
     const result = await provider.analyzeImage({
       imageUrl: media.publicUrl,
       mimeType: media.mimeType,
@@ -54,15 +44,28 @@ async function analyzeMedia(mediaId) {
       tags: result.tags,
       analyzedAt: new Date(),
     };
+
     media.aiStatus = 'completed';
     media.aiError = null;
   } catch (error) {
     console.error(`AI analysis failed for media ${mediaId}:`, error);
+
     media.aiStatus = 'failed';
     media.aiError = error.message || 'AI analysis failed';
   }
 
   await media.save();
+
+  // Notify anyone currently viewing this media's room, in real time, once
+  // analysis lands. This is the only place the pending -> completed/failed
+  // transition happens, so it's the only place that can emit it. The
+  // try/catch means a socket problem can never affect analysis itself.
+  try {
+    emitMediaAnalysisUpdate(media);
+  } catch (socketError) {
+    console.error('Socket emit error (media analysis update):', socketError);
+  }
+
   return media;
 }
 
