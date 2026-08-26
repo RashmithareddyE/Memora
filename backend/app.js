@@ -9,6 +9,7 @@ const searchRoutes = require('./routes/search.routes');
 const organizationRoutes = require('./routes/organization.routes');
 const highlightsRoutes = require('./routes/highlights.routes');
 const analyticsRoutes = require('./routes/analytics.routes');
+const personRoutes = require('./routes/person.routes');
 
 const app = express();
 
@@ -26,5 +27,6 @@ app.use('/api', searchRoutes);
 app.use('/api', organizationRoutes);
 app.use('/api', highlightsRoutes);
 app.use('/api', analyticsRoutes);
+app.use('/api', personRoutes);
 
 module.exports = app;

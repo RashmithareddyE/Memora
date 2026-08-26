@@ -1,6 +1,7 @@
 const Media = require('../models/Media');
 const { getProvider, isAiConfigured } = require('./aiProviders');
 const { emitMediaAnalysisUpdate } = require('../socket');
+const { analyzeFacesForMedia } = require('./face.service');
 
 async function analyzeMedia(mediaId) {
   const media = await Media.findById(mediaId);
@@ -55,6 +56,14 @@ async function analyzeMedia(mediaId) {
   }
 
   await media.save();
+  try {
+  await analyzeFacesForMedia(media._id);
+} catch (faceError) {
+  console.error(
+    `Face analysis failed for media ${media._id}:`,
+    faceError
+  );
+}
 
   // Notify anyone currently viewing this media's room, in real time, once
   // analysis lands. This is the only place the pending -> completed/failed
