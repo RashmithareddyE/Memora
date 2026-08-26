@@ -41,6 +41,9 @@ function Navbar() {
               <Link to="/organize" className="hidden text-sm font-medium text-ink-700 hover:text-coral-600 sm:inline">
                 Organize
               </Link>
+              <Link to="/analytics" className="hidden text-sm font-medium text-ink-700 hover:text-coral-600 sm:inline">
+                 Analytics
+              </Link>
               <span className="hidden text-sm font-medium text-ink-800 sm:inline">
                 {user?.name}
               </span>

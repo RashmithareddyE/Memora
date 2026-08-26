@@ -8,6 +8,7 @@ import RoomPage from '../pages/RoomPage';
 import SearchPage from '../pages/SearchPage';
 import OrganizePage from '../pages/OrganizePage';
 import ProtectedRoute from '../components/routing/ProtectedRoute';
+import AnalyticsPage from '../pages/AnalyticsPage';
 
 function AppRoutes() {
   return (
@@ -41,6 +42,14 @@ function AppRoutes() {
             <ProtectedRoute>
               <SearchPage />
             </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/analytics"
+          element={
+           <ProtectedRoute>
+             <AnalyticsPage />
+           </ProtectedRoute>
           }
         />
         <Route
