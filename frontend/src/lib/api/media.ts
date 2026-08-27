@@ -1,5 +1,6 @@
 import { apiClient } from '../apiClient';
 import type { Media } from '../../types/media';
+import type { NormalizedBox } from '../faceApi';
 
 interface MediaListResponse {
   media: Media[];
@@ -34,15 +35,17 @@ export const mediaApi = {
 
   /**
    * POST /api/media/:id/faces
-   * Saves face descriptors detected in the browser for this media item.
+   * Saves the faces (descriptor + bounding box) detected in the browser
+   * for this media item. Safe to call again for the same media — it
+   * replaces that media's face list rather than appending to it.
    */
   saveFaces: (
     mediaId: string,
-    descriptors: number[][]
+    faces: { descriptor: number[]; box: NormalizedBox }[]
   ) =>
     apiClient.post<SaveFacesResponse>(
       `/media/${mediaId}/faces`,
-      { descriptors }
+      { faces }
     ),
 
   /** DELETE /api/media/:id */

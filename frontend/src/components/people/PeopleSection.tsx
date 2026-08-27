@@ -1,12 +1,82 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Users, X } from 'lucide-react';
+import { Loader2, ScanFace, Users, X } from 'lucide-react';
 import { peopleApi, type Person } from '../../lib/api/people';
+import { mediaApi } from '../../lib/api/media';
 import { ApiError } from '../../lib/apiClient';
+import {
+  getFaceDetections,
+  loadFaceModels,
+  type NormalizedBox,
+} from '../../lib/faceApi';
 import Button from '../ui/Button';
+
+
+function FaceCropImage({
+  src,
+  box,
+  alt,
+}: {
+  src: string;
+  box: NormalizedBox | null | undefined;
+  alt: string;
+}) {
+  if (
+    !box ||
+    box.width <= 0 ||
+    box.height <= 0 ||
+    box.width >= 1 ||
+    box.height >= 1
+  ) {
+    return (
+      <img
+        src={src}
+        alt={alt}
+        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+      />
+    );
+  }
+
+  const pad = 0.35;
+  const paddedWidth = Math.min(1, box.width * (1 + pad * 2));
+  const paddedHeight = Math.min(1, box.height * (1 + pad * 2));
+  const paddedX = Math.max(0, Math.min(1 - paddedWidth, box.x - (paddedWidth - box.width) / 2));
+  const paddedY = Math.max(0, Math.min(1 - paddedHeight, box.y - (paddedHeight - box.height) / 2));
+
+  const backgroundSize = `${100 / paddedWidth}% ${100 / paddedHeight}%`;
+  const positionX = paddedWidth >= 1 ? 0 : (paddedX / (1 - paddedWidth)) * 100;
+  const positionY = paddedHeight >= 1 ? 0 : (paddedY / (1 - paddedHeight)) * 100;
+
+  return (
+    <div
+      role="img"
+      aria-label={alt}
+      className="h-full w-full bg-no-repeat transition-transform duration-300 group-hover:scale-105"
+      style={{
+        backgroundImage: `url(${src})`,
+        backgroundSize,
+        backgroundPosition: `${positionX}% ${positionY}%`,
+      }}
+    />
+  );
+}
 
 interface PeopleSectionProps {
   roomId: string;
+}
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+
+    image.crossOrigin = 'anonymous';
+
+    image.onload = () => resolve(image);
+    image.onerror = () =>
+      reject(new Error(`Could not load image: ${url}`));
+
+    image.src = url;
+  });
 }
 
 function PeopleSection({ roomId }: PeopleSectionProps) {
@@ -15,6 +85,8 @@ function PeopleSection({ roomId }: PeopleSectionProps) {
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [scanProgress, setScanProgress] = useState(0);
+  const [scanStatus, setScanStatus] = useState<string | null>(null);
 
   const peopleQuery = useQuery({
     queryKey: ['people', roomId],
@@ -54,7 +126,103 @@ function PeopleSection({ roomId }: PeopleSectionProps) {
     },
   });
 
-  const people = peopleQuery.data?.people ?? [];
+  const scanMutation = useMutation({
+    mutationFn: async () => {
+      setError(null);
+      setScanProgress(0);
+      setScanStatus('Loading face detection models…');
+
+      await loadFaceModels();
+
+      const response = await mediaApi.list(roomId);
+
+      const images = response.media.filter(
+        (media) => media.mediaType === 'image'
+      );
+
+      if (images.length === 0) {
+        return {
+          scanned: 0,
+          faces: 0,
+        };
+      }
+
+      let totalFaces = 0;
+
+      for (let index = 0; index < images.length; index += 1) {
+        const media = images[index];
+
+        setScanStatus(
+          `Scanning photo ${index + 1} of ${images.length}…`
+        );
+
+        try {
+          const image = await loadImage(media.publicUrl);
+
+          const detections = await getFaceDetections(image);
+          console.log(
+  `[FACE SCAN] ${media.originalName}: ${detections.length} face(s) detected`
+);
+
+          if (detections.length > 0) {
+            await mediaApi.saveFaces(
+              media._id,
+              detections.map((detection) => ({
+                descriptor: Array.from(detection.descriptor),
+                box: detection.box,
+              }))
+            );
+
+            totalFaces += detections.length;
+          }
+        } catch (scanError) {
+          console.error(
+            `Face scan failed for ${media.originalName}:`,
+            scanError
+          );
+        }
+
+        setScanProgress(
+          Math.round(((index + 1) / images.length) * 100)
+        );
+      }
+
+      return {
+        scanned: images.length,
+        faces: totalFaces,
+      };
+    },
+
+    onSuccess: (result) => {
+      setScanStatus(
+        `Finished scanning ${result.scanned} photos. Detected ${result.faces} faces.`
+      );
+
+      queryClient.invalidateQueries({
+        queryKey: ['people', roomId],
+      });
+
+      setTimeout(() => {
+        setScanStatus(null);
+        setScanProgress(0);
+      }, 5000);
+    },
+
+    onError: (err) => {
+      setScanStatus(null);
+      setScanProgress(0);
+
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : 'Could not scan the existing photos.'
+      );
+    },
+  });
+
+  const people = (peopleQuery.data?.people ?? []).filter(
+  (person) => person.memoryCount > 0
+);
 
   const openPerson = (person: Person) => {
     setSelectedPerson(person);
@@ -78,6 +246,14 @@ function PeopleSection({ roomId }: PeopleSectionProps) {
     renameMutation.mutate(trimmedName);
   };
 
+  const handleScan = () => {
+    if (scanMutation.isPending) {
+      return;
+    }
+
+    scanMutation.mutate();
+  };
+
   if (peopleQuery.isLoading) {
     return (
       <div className="rounded-2xl border border-ink-900/10 bg-white/50 px-6 py-8 text-center text-ink-600">
@@ -98,19 +274,76 @@ function PeopleSection({ roomId }: PeopleSectionProps) {
   return (
     <>
       <section className="rounded-2xl border border-ink-900/10 bg-white/50 p-5">
-        <div className="mb-5 flex items-center gap-2">
-          <Users size={20} className="text-coral-600" />
+        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <Users size={20} className="text-coral-600" />
 
-          <div>
-            <h2 className="font-display text-lg font-bold text-ink-900">
-              People
-            </h2>
+            <div>
+              <h2 className="font-display text-lg font-bold text-ink-900">
+                People
+              </h2>
 
-            <p className="text-sm text-ink-500">
-              People detected across your memories
-            </p>
+              <p className="text-sm text-ink-500">
+                People detected across your memories
+              </p>
+            </div>
           </div>
+
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            icon={
+              scanMutation.isPending ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <ScanFace size={16} />
+              )
+            }
+            onClick={handleScan}
+            disabled={scanMutation.isPending}
+          >
+            {scanMutation.isPending
+              ? `Scanning ${scanProgress}%`
+              : 'Scan existing photos'}
+          </Button>
         </div>
+
+        {scanMutation.isPending && (
+          <div className="mb-5 rounded-xl bg-coral-500/10 px-4 py-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-sm text-coral-700">
+                {scanStatus}
+              </p>
+
+              <span className="text-xs font-semibold text-coral-700">
+                {scanProgress}%
+              </span>
+            </div>
+
+            <div className="h-2 overflow-hidden rounded-full bg-coral-500/10">
+              <div
+                className="h-full rounded-full bg-coral-500 transition-all duration-300"
+                style={{ width: `${scanProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {!scanMutation.isPending && scanStatus && (
+          <p className="mb-5 rounded-xl bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700">
+            {scanStatus}
+          </p>
+        )}
+
+        {error && (
+          <p
+            className="mb-5 rounded-xl bg-coral-500/10 px-4 py-3 text-sm text-coral-700"
+            role="alert"
+          >
+            {error}
+          </p>
+        )}
 
         {people.length === 0 ? (
           <div className="rounded-xl border border-dashed border-ink-900/10 px-5 py-8 text-center">
@@ -121,7 +354,7 @@ function PeopleSection({ roomId }: PeopleSectionProps) {
             </p>
 
             <p className="mt-1 text-xs text-ink-500">
-              Upload photos containing people and they'll appear here.
+              Click "Scan existing photos" to scan all memories.
             </p>
           </div>
         ) : (
@@ -135,10 +368,10 @@ function PeopleSection({ roomId }: PeopleSectionProps) {
               >
                 <div className="aspect-square overflow-hidden bg-ink-900/5">
                   {person.representativeMedia?.publicUrl ? (
-                    <img
+                    <FaceCropImage
                       src={person.representativeMedia.publicUrl}
+                      box={person.representativeFaceBox}
                       alt={person.name || 'Detected person'}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center">

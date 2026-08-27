@@ -4,7 +4,7 @@ import { UploadCloud } from 'lucide-react';
 import Button from '../ui/Button';
 import { mediaApi } from '../../lib/api/media';
 import { ApiError } from '../../lib/apiClient';
-import { getFaceDescriptors } from '../../lib/faceApi';
+import { getFaceDetections } from '../../lib/faceApi';
 import type { MediaKind } from '../../types/media';
 
 const ALLOWED_MIME_TYPES: Record<string, MediaKind> = {
@@ -70,19 +70,22 @@ function MediaUpload({ roomId }: { roomId: string }) {
 
   console.log('FACE TEST: image loaded');
 
-  const descriptors = await getFaceDescriptors(image);
+  const detections = await getFaceDetections(image);
 
   console.log(
-    'FACE TEST: descriptors detected:',
-    descriptors.length
+    'FACE TEST: faces detected:',
+    detections.length
   );
 
-  if (descriptors.length > 0) {
+  if (detections.length > 0) {
     console.log('FACE TEST: sending faces to backend');
 
     await mediaApi.saveFaces(
       uploadResult.media._id,
-      descriptors.map((descriptor) => Array.from(descriptor))
+      detections.map((detection) => ({
+        descriptor: Array.from(detection.descriptor),
+        box: detection.box,
+      }))
     );
 
     console.log('FACE TEST: faces saved successfully');

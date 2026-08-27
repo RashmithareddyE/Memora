@@ -1,5 +1,6 @@
 import { apiClient } from '../apiClient';
 import type { Media } from '../../types/media';
+import type { NormalizedBox } from '../faceApi';
 
 export interface Person {
   _id: string;
@@ -12,6 +13,11 @@ export interface Person {
         originalName: string;
       }
     | null;
+  /** Normalized bounding box of this person's face within
+   * representativeMedia, used to render a face crop instead of the whole
+   * photo. Null if not available (e.g. legacy data before this field
+   * existed). */
+  representativeFaceBox: NormalizedBox | null;
 }
 
 interface PeopleResponse {

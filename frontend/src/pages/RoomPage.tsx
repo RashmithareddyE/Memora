@@ -13,6 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 
+import CommentsReactions from '../components/room/CommentsReactions';
 import Button from '../components/ui/Button';
 import MediaUpload from '../components/media/MediaUpload';
 import MediaGallery from '../components/media/MediaGallery';
@@ -52,6 +53,18 @@ function RoomPage() {
     retry: false,
   });
 
+  /*
+   * Load the room's media for the Comments & Reactions section.
+   */
+  const {
+    data: mediaData,
+  } = useQuery({
+    queryKey: ['media', id],
+    queryFn: () =>
+      apiClient.get<MediaListResponse>(`/rooms/${id}/media`),
+    enabled: Boolean(id),
+  });
+
   const leaveMutation = useMutation({
     mutationFn: () =>
       apiClient.post<{ message: string }>(`/rooms/${id}/leave`),
@@ -89,35 +102,33 @@ function RoomPage() {
     },
   });
 
-  // Connects to the shared socket and joins this room's channel — the
-  // server re-verifies membership on every join. Handles reconnect/rejoin
-  // and leave-on-unmount internally; this component only needs `socket`
-  // to attach its own feature listeners on top.
   const { socket } = useRoomSocket(id);
 
-  // Real-time feature listeners, kept in a dedicated effect so they're
-  // attached/removed exactly once per (id, socket) pair — navigating away
-  // and back to the same room never accumulates duplicate listeners,
-  // since the cleanup below always removes the exact same handler
-  // references it registered.
+  /*
+   * Real-time room activity.
+   */
   useEffect(() => {
     if (!id) return;
 
     const pushActivity = (message?: string) => {
       if (!message) return;
-      setActivityFeed((prev) => [message, ...prev].slice(0, 10));
+
+      setActivityFeed((prev) =>
+        [message, ...prev].slice(0, 10)
+      );
     };
 
     const handleMediaCreated = (
-      payload: { media: Media; activity?: string }
+      payload: {
+        media: Media;
+        activity?: string;
+      }
     ) => {
       queryClient.setQueryData<MediaListResponse>(
         ['media', id],
         (old) => {
           if (!old) return old;
 
-          // The uploader already has this item from their own HTTP response;
-          // this check is what stops it from appearing twice for them.
           const alreadyPresent = old.media.some(
             (item) => item._id === payload.media._id
           );
@@ -134,7 +145,9 @@ function RoomPage() {
     };
 
     const handleMediaDeleted = (
-      payload: { mediaId: string }
+      payload: {
+        mediaId: string;
+      }
     ) => {
       queryClient.setQueryData<MediaListResponse>(
         ['media', id],
@@ -151,7 +164,9 @@ function RoomPage() {
     };
 
     const handleAnalysisUpdate = (
-      payload: { media: Media }
+      payload: {
+        media: Media;
+      }
     ) => {
       queryClient.setQueryData<MediaListResponse>(
         ['media', id],
@@ -171,7 +186,9 @@ function RoomPage() {
     };
 
     const handleMemberJoined = (
-      payload: { activity?: string }
+      payload: {
+        activity?: string;
+      }
     ) => {
       queryClient.invalidateQueries({
         queryKey: ['room', id],
@@ -181,7 +198,9 @@ function RoomPage() {
     };
 
     const handleMemberLeft = (
-      payload: { activity?: string }
+      payload: {
+        activity?: string;
+      }
     ) => {
       queryClient.invalidateQueries({
         queryKey: ['room', id],
@@ -190,43 +209,157 @@ function RoomPage() {
       pushActivity(payload.activity);
     };
 
-    socket.on('media:created', handleMediaCreated);
-    socket.on('media:deleted', handleMediaDeleted);
+    /*
+     * Comments / reactions.
+     *
+     * These invalidate the relevant queries so every person
+     * currently inside the room sees the latest state.
+     */
+    const handleCommentCreated = (
+      payload: {
+        comment?: {
+          media?: string;
+        };
+        activity?: string;
+      }
+    ) => {
+      pushActivity(payload.activity);
+
+      if (payload.comment?.media) {
+        queryClient.invalidateQueries({
+          queryKey: [
+            'comments',
+            id,
+            payload.comment.media,
+          ],
+        });
+      }
+    };
+
+    const handleCommentDeleted = (
+      payload: {
+        mediaId?: string;
+      }
+    ) => {
+      if (payload.mediaId) {
+        queryClient.invalidateQueries({
+          queryKey: [
+            'comments',
+            id,
+            payload.mediaId,
+          ],
+        });
+      }
+    };
+
+    const handleReactionUpdated = (
+      payload: {
+        mediaId?: string;
+        activity?: string;
+      }
+    ) => {
+      pushActivity(payload.activity);
+
+      if (payload.mediaId) {
+        queryClient.invalidateQueries({
+          queryKey: [
+            'reactions',
+            id,
+            payload.mediaId,
+          ],
+        });
+      }
+    };
+
+    socket.on(
+      'media:created',
+      handleMediaCreated
+    );
+
+    socket.on(
+      'media:deleted',
+      handleMediaDeleted
+    );
+
     socket.on(
       'media:analysis-completed',
       handleAnalysisUpdate
     );
+
     socket.on(
       'media:analysis-failed',
       handleAnalysisUpdate
     );
+
     socket.on(
       'room:member-joined',
       handleMemberJoined
     );
+
     socket.on(
       'room:member-left',
       handleMemberLeft
     );
 
+    socket.on(
+      'room:comment-created',
+      handleCommentCreated
+    );
+
+    socket.on(
+      'room:comment-deleted',
+      handleCommentDeleted
+    );
+
+    socket.on(
+      'room:reaction-updated',
+      handleReactionUpdated
+    );
+
     return () => {
-      socket.off('media:created', handleMediaCreated);
-      socket.off('media:deleted', handleMediaDeleted);
+      socket.off(
+        'media:created',
+        handleMediaCreated
+      );
+
+      socket.off(
+        'media:deleted',
+        handleMediaDeleted
+      );
+
       socket.off(
         'media:analysis-completed',
         handleAnalysisUpdate
       );
+
       socket.off(
         'media:analysis-failed',
         handleAnalysisUpdate
       );
+
       socket.off(
         'room:member-joined',
         handleMemberJoined
       );
+
       socket.off(
         'room:member-left',
         handleMemberLeft
+      );
+
+      socket.off(
+        'room:comment-created',
+        handleCommentCreated
+      );
+
+      socket.off(
+        'room:comment-deleted',
+        handleCommentDeleted
+      );
+
+      socket.off(
+        'room:reaction-updated',
+        handleReactionUpdated
       );
     };
   }, [id, socket, queryClient]);
@@ -234,11 +367,15 @@ function RoomPage() {
   const handleCopyCode = async (code: string) => {
     try {
       await navigator.clipboard.writeText(code);
+
       setCodeCopied(true);
-      setTimeout(() => setCodeCopied(false), 2000);
+
+      setTimeout(
+        () => setCodeCopied(false),
+        2000
+      );
     } catch {
-      // Clipboard API can be blocked in some environments;
-      // the code is still visible on screen for manual copying.
+      // Clipboard API can be blocked in some environments.
     }
   };
 
@@ -247,7 +384,10 @@ function RoomPage() {
       <div className="container-page flex min-h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-ink-600">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-coral-500 border-t-transparent" />
-          <span className="text-sm">Loading room…</span>
+
+          <span className="text-sm">
+            Loading room…
+          </span>
         </div>
       </div>
     );
@@ -287,18 +427,30 @@ function RoomPage() {
   const room = data!.room;
 
   const isOwner =
-    String(room.owner._id) === String(user?.id);
+    String(room.owner._id) ===
+    String(user?.id);
 
   return (
     <div className="container-page py-10 sm:py-14">
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: 'easeOut' }}
+        initial={{
+          opacity: 0,
+          y: 12,
+        }}
+        animate={{
+          opacity: 1,
+          y: 0,
+        }}
+        transition={{
+          duration: 0.4,
+          ease: 'easeOut',
+        }}
         className="flex flex-col gap-6"
       >
         <button
-          onClick={() => navigate('/dashboard')}
+          onClick={() =>
+            navigate('/dashboard')
+          }
           className="flex w-fit items-center gap-1.5 text-sm text-ink-600 hover:text-ink-900"
         >
           <ArrowLeft size={16} />
@@ -357,7 +509,9 @@ function RoomPage() {
                   setLeaveError(null);
                   leaveMutation.mutate();
                 }}
-                disabled={leaveMutation.isPending}
+                disabled={
+                  leaveMutation.isPending
+                }
                 className="disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {leaveMutation.isPending
@@ -386,8 +540,8 @@ function RoomPage() {
               </p>
 
               <p className="mt-1 text-sm text-ink-600">
-                As the room owner, you can permanently delete
-                this room when you no longer need it.
+                As the room owner, you can permanently
+                delete this room when you no longer need it.
               </p>
             </div>
 
@@ -395,16 +549,19 @@ function RoomPage() {
               variant="outline"
               size="sm"
               onClick={() => {
-                const confirmed = window.confirm(
-                  'Are you sure you want to delete this room? This action cannot be undone.'
-                );
+                const confirmed =
+                  window.confirm(
+                    'Are you sure you want to delete this room? This action cannot be undone.'
+                  );
 
                 if (confirmed) {
                   setLeaveError(null);
                   deleteMutation.mutate();
                 }
               }}
-              disabled={deleteMutation.isPending}
+              disabled={
+                deleteMutation.isPending
+              }
               className="shrink-0 text-coral-700 hover:text-coral-800 disabled:cursor-not-allowed disabled:opacity-70"
             >
               <Trash2 size={15} />
@@ -477,7 +634,9 @@ function RoomPage() {
             </Link>
           </div>
 
-          <MediaUpload roomId={room._id} />
+          <MediaUpload
+            roomId={room._id}
+          />
 
           <div className="mt-6">
             <MediaGallery
@@ -487,11 +646,14 @@ function RoomPage() {
             />
           </div>
         </div>
-                {/* People detected across memories */}
-        <PeopleSection roomId={room._id} />
+
+        {/* People detected across memories */}
+        <PeopleSection
+          roomId={room._id}
+        />
 
         <div className="grid gap-6 sm:grid-cols-2">
-          {/* Live activity, populated in real time via Socket.IO */}
+          {/* Live activity */}
           <div className="glass-panel rounded-2xl px-6 py-6">
             <div className="flex items-center gap-2 text-ink-900">
               <Activity
@@ -525,7 +687,7 @@ function RoomPage() {
             )}
           </div>
 
-          {/* Placeholder section for a later phase */}
+          {/* Comments & reactions */}
           <div className="glass-panel rounded-2xl px-6 py-6">
             <div className="flex items-center gap-2 text-ink-900">
               <MessageCircle
@@ -539,9 +701,14 @@ function RoomPage() {
             </div>
 
             <p className="mt-2 text-sm text-ink-600">
-              Commenting and reactions on shared memories
-              are planned for a later phase.
+              Share thoughts and reactions on memories
+              in this room.
             </p>
+
+            <CommentsReactions
+              roomId={room._id}
+              media={mediaData?.media ?? []}
+            />
           </div>
         </div>
       </motion.div>
