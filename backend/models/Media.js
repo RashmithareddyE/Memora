@@ -102,6 +102,16 @@ const mediaSchema = new mongoose.Schema({
         min: 0,
         max: 1,
       },
+
+      // Normalized (0-1) bounding box of this specific face within THIS
+      // photo, so the frontend can render a crop of just this person's
+      // face rather than the whole (possibly multi-person) photo.
+      box: {
+        x: { type: Number, default: null },
+        y: { type: Number, default: null },
+        width: { type: Number, default: null },
+        height: { type: Number, default: null },
+      },
     },
   ],
 

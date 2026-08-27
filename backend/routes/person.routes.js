@@ -4,6 +4,7 @@ const {
   getRoomPeople,
   renamePerson,
   getPersonMedia,
+  resetRoomPeople,
 } = require('../controllers/person.controller');
 
 const protect = require('../middlewares/auth.middleware');
@@ -20,5 +21,6 @@ router.patch('/people/:id', renamePerson);
 
 // Get all photos containing a particular person
 router.get('/people/:id/media', getPersonMedia);
+router.delete('/rooms/:roomId/people/reset', resetRoomPeople);
 
 module.exports = router;

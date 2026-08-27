@@ -8,7 +8,7 @@ const Person = require('../models/Person');
 
 const { ALLOWED_MIME_TYPES } = require('../middlewares/upload.middleware');
 const { analyzeMedia } = require('../services/aiMedia.service');
-const { findOrCreatePerson } = require('../services/person.service');
+const { matchFacesForPhoto } = require('../services/person.service');
 const { emitMediaCreated, emitMediaDeleted } = require('../socket');
 
 const sanitizeFilename = (filename) =>
@@ -337,11 +337,47 @@ const analyzeMediaController = async (req, res) => {
   }
 };
 
+// A normalized (0-1) bounding box, as produced by the frontend from the
+// face-api detection box divided by the image's natural dimensions.
+const isValidBox = (box) =>
+  box === null ||
+  box === undefined ||
+  (typeof box === 'object' &&
+    ['x', 'y', 'width', 'height'].every(
+      (key) =>
+        typeof box[key] === 'number' &&
+        Number.isFinite(box[key]) &&
+        box[key] >= -0.01 &&
+        box[key] <= 1.5
+    ));
+
+const isValidDescriptor = (descriptor) =>
+  Array.isArray(descriptor) &&
+  descriptor.length === 128 &&
+  descriptor.every(
+    (value) => typeof value === 'number' && Number.isFinite(value)
+  );
+
 // POST /api/media/:id/faces
+//
+// Body: { faces: [{ descriptor: number[128], box?: {x,y,width,height} }] }
+//
+// Replaces the full face list for this photo, so calling this endpoint
+// again for the same photo (rescanning) is idempotent: the previous
+// associations for this specific media are dropped and rebuilt from the
+// freshly-detected faces, rather than appended to.
 const saveMediaFaces = async (req, res) => {
   try {
     const { id } = req.params;
-    const { descriptors } = req.body;
+
+    // Accept either the current `faces: [{descriptor, box}]` shape or the
+    // legacy `descriptors: number[][]` shape (no box data) for backwards
+    // compatibility with any in-flight clients.
+    const rawFaces = Array.isArray(req.body.faces)
+      ? req.body.faces
+      : Array.isArray(req.body.descriptors)
+        ? req.body.descriptors.map((descriptor) => ({ descriptor, box: null }))
+        : null;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -349,9 +385,9 @@ const saveMediaFaces = async (req, res) => {
       });
     }
 
-    if (!Array.isArray(descriptors)) {
+    if (!rawFaces) {
       return res.status(400).json({
-        message: 'Face descriptors must be an array',
+        message: 'Face data must be an array',
       });
     }
 
@@ -377,35 +413,70 @@ const saveMediaFaces = async (req, res) => {
       });
     }
 
-    const validDescriptors = descriptors.filter(
-      (descriptor) =>
-        Array.isArray(descriptor) &&
-        descriptor.length === 128 &&
-        descriptor.every(
-          (value) =>
-            typeof value === 'number' &&
-            Number.isFinite(value)
-        )
+    const faceInputs = rawFaces
+      .filter(
+        (face) =>
+          face &&
+          isValidDescriptor(face.descriptor) &&
+          isValidBox(face.box)
+      )
+      .map((face) => ({
+        descriptor: face.descriptor,
+        box: face.box || null,
+      }));
+
+    // Track who this photo was previously linked to, so we can correct
+    // their memoryCount too if this rescan changes the result (e.g. a
+    // face that no longer detects, or now resolves to someone else).
+    const previousPersonIds = (media.faces || []).map((face) =>
+      face.person.toString()
     );
 
-    const detectedFaces = [];
+    let detectedFaces = [];
 
-    for (const descriptor of validDescriptors) {
-      const result = await findOrCreatePerson(
+    if (faceInputs.length > 0) {
+      const results = await matchFacesForPhoto(
         media.room,
-        descriptor,
+        faceInputs,
         media._id
       );
 
-      detectedFaces.push({
+      detectedFaces = results.map((result) => ({
         person: result.person._id,
-        confidence: result.similarity,
-      });
+        confidence:
+          result.distance === 0
+            ? 1
+            : Math.max(0, 1 - result.distance),
+        box: result.box || undefined,
+      }));
     }
 
+    // Replace the face list for this photo. Combined with the matching
+    // service's idempotent embedding handling, this makes rescanning the
+    // same photo safe to repeat any number of times.
     media.faces = detectedFaces;
 
     await media.save();
+
+    // Recalculate memoryCount only for people actually touched by this
+    // photo (before and/or after), rather than every person in the room,
+    // since counts elsewhere in the room are unaffected by this save.
+    const touchedPersonIds = new Set([
+      ...previousPersonIds,
+      ...detectedFaces.map((face) => face.person.toString()),
+    ]);
+
+    for (const personId of touchedPersonIds) {
+      const count = await Media.countDocuments({
+        room: media.room,
+        'faces.person': personId,
+      });
+
+      await Person.updateOne(
+        { _id: personId },
+        { $set: { memoryCount: count } }
+      );
+    }
 
     const responseMedia = await Media.findById(media._id)
       .select('-storageKey')
@@ -422,7 +493,8 @@ const saveMediaFaces = async (req, res) => {
     console.error('Save media faces error:', error);
 
     return res.status(500).json({
-      message: 'Something went wrong while saving detected faces',
+      message:
+        'Something went wrong while saving detected faces',
     });
   }
 };

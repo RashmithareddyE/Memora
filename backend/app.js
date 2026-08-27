@@ -10,6 +10,8 @@ const organizationRoutes = require('./routes/organization.routes');
 const highlightsRoutes = require('./routes/highlights.routes');
 const analyticsRoutes = require('./routes/analytics.routes');
 const personRoutes = require('./routes/person.routes');
+const commentRoutes = require('./routes/comment.routes');
+const reactionRoutes = require('./routes/reaction.routes');
 
 const app = express();
 
@@ -28,5 +30,7 @@ app.use('/api', organizationRoutes);
 app.use('/api', highlightsRoutes);
 app.use('/api', analyticsRoutes);
 app.use('/api', personRoutes);
+app.use('/api', commentRoutes);
+app.use('/api', reactionRoutes);
 
 module.exports = app;

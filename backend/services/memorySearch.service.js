@@ -65,8 +65,20 @@ function scoreMedia(media, terms) {
   const descriptionText = (ai.description || '').toLowerCase();
   const nameText = (media.originalName || '').toLowerCase();
 
+  // Names of the recognized People (face-recognition groups) tagged in
+  // this photo — distinct from ai.people, which is free-text AI
+  // description ("two friends smiling") rather than actual identities.
+  // "Unknown person" is intentionally excluded so a query never matches
+  // every unnamed person's photos.
+  const recognizedPeopleText = (media.faces || [])
+    .map((face) => (face && face.person && face.person.name) || '')
+    .filter((personName) => personName && personName !== 'Unknown person')
+    .join(' ')
+    .toLowerCase();
+
   let score = 0;
   for (const term of terms) {
+    if (recognizedPeopleText.includes(term)) score += 4;
     if (tagsText.includes(term)) score += 3;
     if (eventsText.includes(term)) score += 2.5;
     if (peopleText.includes(term)) score += 2;
@@ -132,11 +144,13 @@ async function searchMemories({ userId, query, roomId, limit = 24, page = 1 }) {
       query: trimmedQuery,
     };
   }
-
-  const candidates = await Media.find({ room: { $in: roomIds } })
-    .select('-storageKey')
-    .populate('uploader', 'name email')
-    .lean();
+   const candidates = await Media.find({
+  room: { $in: roomIds },
+})
+  .select('-storageKey')
+  .populate('uploader', 'name email')
+  .populate('faces.person', 'name')
+  .lean();
 
   const scored = candidates
     .map((media) => ({ media, score: scoreMedia(media, terms) }))

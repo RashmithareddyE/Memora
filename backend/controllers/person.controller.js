@@ -28,7 +28,7 @@ const getRoomPeople = async (req, res) => {
     }
 
     const people = await Person.find({ room: roomId })
-      .select('-embedding')
+      .select('-embeddings')
       .populate('representativeMedia', 'publicUrl originalName');
 
     return res.status(200).json({ people });
@@ -79,7 +79,7 @@ const renamePerson = async (req, res) => {
     await person.save();
 
     const responsePerson = await Person.findById(person._id)
-      .select('-embedding')
+      .select('-embeddings')
       .populate('representativeMedia', 'publicUrl originalName');
 
     return res.status(200).json({
@@ -135,6 +135,7 @@ const getPersonMedia = async (req, res) => {
         name: person.name,
         memoryCount: media.length,
         representativeMedia: person.representativeMedia,
+        representativeFaceBox: person.representativeFaceBox,
       },
       media,
     });
@@ -146,9 +147,78 @@ const getPersonMedia = async (req, res) => {
     });
   }
 };
+// TEMPORARY: Reset face/person grouping for one room.
+// This does NOT delete uploaded media files.
+const resetRoomPeople = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(roomId)) {
+      return res.status(400).json({
+        message: 'Invalid room ID',
+      });
+    }
+
+    const room = await Room.findById(roomId);
+
+    if (!room) {
+      return res.status(404).json({
+        message: 'Room not found',
+      });
+    }
+
+    if (!isRoomMember(room, req.userId)) {
+      return res.status(403).json({
+        message: 'You must be a member of this room',
+      });
+    }
+
+    // Find all Person records belonging to this room.
+    const people = await Person.find({
+      room: roomId,
+    }).select('_id');
+
+    const personIds = people.map((person) => person._id);
+
+    // Remove the old person references from media.
+    // The media itself is NOT deleted.
+    if (personIds.length > 0) {
+      await Media.updateMany(
+        {
+          room: roomId,
+          'faces.person': { $in: personIds },
+        },
+        {
+          $pull: {
+            faces: {
+              person: { $in: personIds },
+            },
+          },
+        }
+      );
+    }
+
+    // Delete only the Person records.
+    await Person.deleteMany({
+      room: roomId,
+    });
+
+    return res.status(200).json({
+      message: 'Old people/face grouping reset successfully',
+      removedPeople: personIds.length,
+    });
+  } catch (error) {
+    console.error('Reset room people error:', error);
+
+    return res.status(500).json({
+      message: 'Something went wrong while resetting people',
+    });
+  }
+};
 
 module.exports = {
   getRoomPeople,
   renamePerson,
   getPersonMedia,
+  resetRoomPeople,
 };
